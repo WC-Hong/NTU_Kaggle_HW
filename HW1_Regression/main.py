@@ -61,7 +61,7 @@ class Covid19Model(nn.Module):
             nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU(),
-            nn.Linear(32, 1)
+            nn.Linear(32, 1),
         )
         self.criterion = nn.MSELoss(reduction="mean")
 
@@ -80,13 +80,17 @@ def load_dataset(path):
 
 
 def split_dataset(data):
-    np.random.shuffle(data[:])
-    flag = int(data.shape[0] * .9)
-    return data[:flag, :-1], data[:flag, -1], data[flag:, :-1], data[flag:, -1]
+    train_indices = [i for i in range(data.shape[0]) if i % 10 != 0]
+    valid_indices = [i for i in range(data.shape[0]) if i % 10 == 0]
+
+    return data[train_indices, :-1], data[train_indices, -1], data[valid_indices, :-1], data[valid_indices, -1]
+    # np.random.shuffle(data[:])
+    # flag = int(data.shape[0] * .9)
+    # return data[:flag, :-1], data[:flag, -1], data[flag:, :-1], data[flag:, -1]
 
 
 def train():
-    optimizer = torch.optim.SGD(train_model.parameters(), lr=0.001, momentum=0.09)
+    optimizer = torch.optim.SGD(train_model.parameters(), lr=0.001, momentum=0.9)
     history = {'train': [], 'dev': []}
     min_mse = 1000
     early_stop_cnt = 0
@@ -104,13 +108,13 @@ def train():
         if valid_mse < min_mse:
             # Save model if your model improved
             min_mse = valid_mse
-            # print('Saving model (epoch = {:4d}, loss = {:.4f})'.format(epoch + 1, min_mse))
+            print('Saving model (epoch = {:4d}, loss = {:.4f})'.format(epoch + 1, min_mse))
             torch.save(train_model.state_dict(), "model.pth")  # Save model to specified path
             early_stop_cnt = 0
         else:
             early_stop_cnt += 1
         history["dev"].append(valid_mse)
-        print("epoch {:4d}: loss = {:.4f}".format(epoch + 1, valid_mse))
+        # print("epoch {:4d}: loss = {:.4f}".format(epoch + 1, valid_mse))
         if early_stop_cnt > 200:
             print("early stop: epoch = {}".format(epoch))
             break
@@ -221,10 +225,9 @@ if __name__ == '__main__':
     raw = load_dataset(TEST_PATH)
     test_dataset = DataLoader(Covid19Dataset(raw, np.array([-1 for i in range(len(raw))])),
                               batch_size=BATCH_SIZE,
-                              shuffle=True,
                               drop_last=False)
-    test_model = Covid19Model(test_dataset.dataset.dim)
-    test_model.load_state_dict(torch.load("./model.pth"))
-    test_model = test_model.to(DEVICE)
+    test_model = Covid19Model(test_dataset.dataset.dim).to(DEVICE)
+    test_model.load_state_dict(torch.load("./model.pth", map_location="cpu"))
     pred = test()
+    plot_pred(valid_dataset, test_model, DEVICE)
     save_pred(pred, "./output/pred.csv")
