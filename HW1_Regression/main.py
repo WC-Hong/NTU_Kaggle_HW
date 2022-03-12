@@ -11,7 +11,7 @@ from sklearn.feature_selection import SelectKBest, f_regression
 TRAIN_PATH = "./dataset/covid.train.csv"
 TEST_PATH = "./dataset/covid.test.shuffle.csv"
 MODE = "train"
-BATCH_SIZE = 270
+BATCH_SIZE = 128
 DEVICE = "cuda"
 MAX_EPOCH = 3000
 
@@ -21,8 +21,8 @@ class Covid19Dataset(Dataset):
         self.data = torch.FloatTensor(x)
         self.ground_truth = torch.FloatTensor(y)
 
-        # self._get_most_relative(x, y, 14)
         # self._normalization()
+        # self._get_most_relative(x, y, -10)
         self._standardization()
 
         self.dim = self.data.shape[1]
@@ -39,8 +39,8 @@ class Covid19Dataset(Dataset):
         self.data[:, 40:] = (self.data[:, 40:] - mean) / std
 
     def _normalization(self):
-        maximum = torch.max(self.data[:, 40:], 0).values
-        minimum = torch.min(self.data[:, 40:], 0).values
+        maximum = torch.max(self.data[:, 40:])
+        minimum = torch.min(self.data[:, 40:])
         self.data[:, 40:] = (self.data[:, 40:] - minimum) / (maximum - minimum)
         # denominator = torch.sqrt(torch.diag(torch.matmul(self.data, self.data.transpose(0, 1))))
         # self.data = torch.div(self.data.transpose(0, 1), denominator).transpose(0, 1)
@@ -48,7 +48,8 @@ class Covid19Dataset(Dataset):
     def _get_most_relative(self, x, y, k):
         bestfeatures = SelectKBest(score_func=f_regression, k=5)
         fit = bestfeatures.fit(x, y)
-        index = fit.scores_.argsort()[-1*k:]
+        index = fit.scores_.argsort()[k:]
+        index = np.concatenate((np.arange(40), index))
         self.data = self.data[:, index]
 
 
@@ -57,10 +58,10 @@ class Covid19Model(nn.Module):
         super(Covid19Model, self).__init__()
 
         self.model = nn.Sequential(
-            nn.Linear(input_dim, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU(),
+            nn.Linear(input_dim, 32),
+            nn.BatchNorm1d(32),
+            nn.Dropout(0.2),
+            nn.LeakyReLU(),
             nn.Linear(32, 1),
         )
         self.criterion = nn.MSELoss(reduction="mean")
@@ -80,13 +81,9 @@ def load_dataset(path):
 
 
 def split_dataset(data):
-    train_indices = [i for i in range(data.shape[0]) if i % 10 != 0]
-    valid_indices = [i for i in range(data.shape[0]) if i % 10 == 0]
-
-    return data[train_indices, :-1], data[train_indices, -1], data[valid_indices, :-1], data[valid_indices, -1]
-    # np.random.shuffle(data[:])
-    # flag = int(data.shape[0] * .9)
-    # return data[:flag, :-1], data[:flag, -1], data[flag:, :-1], data[flag:, -1]
+    np.random.shuffle(data[:])
+    flag = int(data.shape[0] * .9)
+    return data[:flag, :-1], data[:flag, -1], data[flag:, :-1], data[flag:, -1]
 
 
 def train():
